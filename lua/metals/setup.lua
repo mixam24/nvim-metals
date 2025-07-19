@@ -125,21 +125,7 @@ local function setup_dap(execute_command)
       end
     end
 
-<<<<<<< HEAD
     local metals_id = util.find_metals_client_id()
-=======
-    execute_command({
-      command = "metals.debug-adapter-start",
-      arguments = arguments,
-    }, function(_, _, res)
-      -- In metals we throw various exceptions when handling
-      -- debug-adapter-start but they are all handled and status messages are
-      -- given to the client, so they aren't errors here. That's why we don't
-      -- really capture or care about the err and instead just make sure res is
-      -- there and not null.
-      if res and res.result then
-        local port = util.split_on(res.result.uri, ":")[3]
->>>>>>> origin/main
 
     local client = vim.lsp.get_client_by_id(metals_id)
 
