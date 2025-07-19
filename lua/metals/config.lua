@@ -2,7 +2,6 @@ local api = vim.api
 local fn = vim.fn
 local lsp = vim.lsp
 
-local decoration = require("metals.decoration")
 local default_handlers = require("metals.handlers")
 local jvmopts = require("metals.jvmopts")
 local log = require("metals.log")
@@ -94,8 +93,6 @@ local metals_init_options = {
   compilerOptions = {},
   debuggingProvider = debugging_provider,
   testExplorerProvider = debugging_provider,
-  decorationProvider = true,
-  didFocusProvider = true,
   disableColorOutput = true,
   doctorProvider = "json",
   doctorVisibilityProvider = true,
@@ -112,19 +109,28 @@ local metals_init_options = {
 local valid_metals_settings = {
   "ammoniteJvmProperties",
   "autoImportBuild",
+  "automaticImportBuild",
+  "bloopJvmProperties",
   "bloopSbtAlreadyInstalled",
   "bloopVersion",
-  "bloopJvmProperties",
+  "customProjectRoot",
   "defaultBspToBuildTool",
+  "defaultShell",
+  "enableBestEffort",
+  "enableIndentOnPaste",
   "enableSemanticHighlighting",
+  "enableStripMarginOnTypeFormatting",
   "excludedPackages",
   "fallbackScalaVersion",
   "gradleScript",
   "inlayHints",
+  "inlayHintsOptions",
   "javaFormat.eclipseConfigPath",
   "javaFormat.eclipseProfile",
+  "javaFormatConfig",
   "javaHome",
   "mavenScript",
+  "mcpClient",
   "millScript",
   "remoteLanguageServer",
   "sbtScript",
@@ -136,9 +142,14 @@ local valid_metals_settings = {
   "showImplicitArguments",
   "showImplicitConversionsAndClasses",
   "showInferredType",
+  "startMcpServer",
   "superMethodLensesEnabled",
+  "superMethodLensesEnabled",
+  "symbolPrefixes",
   "testUserInterface",
   "verboseCompilation",
+  "worksheetCancelTimeout",
+  "worksheetScreenWidth",
 }
 
 -- We keep these separated from the `valid_metals_settings` just for clarity.
@@ -147,7 +158,6 @@ local valid_metals_settings = {
 -- but having multiple ways to set "settings" for metals may confuse the user
 -- even more, so it's a risk I think is worth it.
 local valid_nvim_metals_settings = {
-  "decorationColor",
   "disabledMode",
   "metalsBinaryPath",
   "serverOrg",
@@ -224,7 +234,7 @@ end
 commands["metals-run-session-start"] = debug_start_command(true)
 commands["metals-debug-session-start"] = debug_start_command(false)
 commands["metals-diagnostics-focus"] = function()
-  vim.diagnostic.setqflist({ severity = "E" })
+  vim.diagnostic.setqflist({ severity = vim.diagnostic.severity.ERROR })
 end
 -- We can re-se require("metals").run_doctor which does the same thing or we'd
 -- hae a cyclical dependency
@@ -287,7 +297,6 @@ local function validate_config(config, bufnr)
   -- config.settings.
   -----------------------------------------------------------------------------
 
-  decoration.set_color(config.settings.metals.decorationColor)
   tvp.setup_config(config.tvp or {})
 
   if not util.has_bins(metals_bin()) and config.settings.metals.useGlobalExecutable then

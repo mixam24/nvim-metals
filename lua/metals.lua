@@ -5,7 +5,6 @@ local lsp = vim.lsp
 local commands = require("metals.commands")
 local conf = require("metals.config")
 local decoder = require("metals.decoder")
-local decoration = require("metals.decoration")
 local install = require("metals.install")
 local log = require("metals.log")
 local messages = require("metals.messages")
@@ -28,11 +27,10 @@ local M = {}
 local function execute_command(command_params, callback)
   lsp.buf_request_all(0, "workspace/executeCommand", command_params, function(responses)
     local metals_id = util.find_metals_client_id()
+    local response = responses[metals_id]
 
-    for client_id, response in pairs(responses) do
-      if client_id ~= metals_id then
-        return
-      elseif callback then
+    if response then
+      if callback then
         local context = response.ctx and response.ctx.method or ""
         callback(response.err, context, response)
       elseif response.err then
@@ -110,8 +108,8 @@ M.copy_worksheet_output = function()
       if err then
         log.error_and_show(string.format("Server error with [%s]. Check logs for details.", method))
         log.error(err)
-      elseif resp.value then
-        fn.setreg("+", resp.value)
+      elseif resp.result.value then
+        fn.setreg("+", resp.result.value)
         log.info_and_show("Copied worksheet output to your +register")
         -- no final else needed since if there is no err and there is no val, Metals will
         -- return a warning with logMessage, so we can skip it here.
@@ -294,12 +292,12 @@ M.organize_imports = function()
     log.warn_and_show("Metals is not attatched to this buffer, so unable to organize imports.")
     return
   end
-  local metals_client = lsp_clients[1]
+  local Metals_client = lsp_clients[1]
 
   local params = lsp.util.make_range_params(nil, "utf-8")
   params.context = { diagnostics = {}, only = { "source.organizeImports" } }
 
-  local response = metals_client.request_sync("textDocument/codeAction", params, 1000, 0)
+  local response = Metals_client:request_sync("textDocument/codeAction", params, 1000, 0)
   if not response or vim.tbl_isempty(response) then
     return
   end
@@ -307,8 +305,10 @@ M.organize_imports = function()
   for _, result in pairs(response.result or {}) do
     if result.edit then
       lsp.util.apply_workspace_edit(result.edit, "utf-16")
+    elseif result.disabled then
+      log.warn_and_show(result.disabled.reason)
     else
-      lsp.buf.execute_command(result)
+      Metals_client:exec_cmd(result)
     end
   end
 end
@@ -318,9 +318,9 @@ end
 M.restart_metals = function()
   for _, buf in pairs(fn.getbufinfo({ bufloaded = true })) do
     if vim.tbl_contains(conf.scala_file_types, api.nvim_get_option_value("filetype", { buf = buf.bufnr })) then
-      local clients = lsp.get_clients({ buffer = buf.bufnr, name = "metals" })
-      for _, client in ipairs(clients) do
-        client.stop()
+      local Clients = lsp.get_clients({ buffer = buf.bufnr, name = "metals" })
+      for _, Client in ipairs(Clients) do
+        Client:stop()
       end
     end
   end
@@ -348,8 +348,8 @@ M.show_build_target_info = function()
     if err then
       log.error_and_show(string.format("Unable to retrieve build targets", method))
       log.error(err)
-    elseif resp and not vim.tbl_isempty(resp) then
-      vim.ui.select(resp, {
+    elseif resp.result and not vim.tbl_isempty(resp.result) then
+      vim.ui.select(resp.result, {
         prompt = "Choose build target to view:",
       }, function(choice)
         if choice ~= nil then
@@ -407,7 +407,7 @@ M.start_server = function()
 end
 
 M.goto_super_method = function()
-  local text_doc_position = lsp.util.make_position_params()
+  local text_doc_position = lsp.util.make_position_params(0, "utf-16")
   execute_command({
     command = "metals.goto-super-method",
     arguments = { text_doc_position },
@@ -415,7 +415,7 @@ M.goto_super_method = function()
 end
 
 M.super_method_hierarchy = function()
-  local text_doc_position = lsp.util.make_position_params()
+  local text_doc_position = lsp.util.make_position_params(0, "utf-16")
   execute_command({
     command = "metals.super-method-hierarchy",
     arguments = { text_doc_position },
@@ -423,12 +423,12 @@ M.super_method_hierarchy = function()
 end
 
 M.run_scalafix = function()
-  local text_doc_position = lsp.util.make_position_params()
+  local text_doc_position = lsp.util.make_position_params(0, "utf-16")
   execute_command({ command = "metals.scalafix-run", arguments = { text_doc_position } })
 end
 
 M.run_single_scalafix = function(rules)
-  local text_doc_position = lsp.util.make_position_params()
+  local text_doc_position = lsp.util.make_position_params(0, "utf-16")
   local args = { textDocumentPositionParams = text_doc_position }
   if not rules == nil and type(rules) == "table" then
     args.rules = rules
@@ -457,7 +457,7 @@ M.type_of_range = function()
     end_pos = { range_end_row, range_end_col - 1 }
   end
 
-  vim.lsp.buf_request(0, "textDocument/hover", vim.lsp.util.make_given_range_params(start_pos, end_pos))
+  vim.lsp.buf_request(0, "textDocument/hover", vim.lsp.util.make_given_range_params(start_pos, end_pos, 0, "utf-16"))
 end
 
 -- Since we want metals to be the entrypoint for everything, just for ensure that it's
@@ -467,8 +467,37 @@ M.initialize_or_attach = setup.initialize_or_attach
 M.install = install.install_or_update
 M.update = install.install_or_update
 
+-- NOTE: This whole thing is a hack. Nvim doesn't provide a nice way to get tooltips at the moment so we
+-- need manually look up the inlay_hint for the current line and then display it in a floating window.
+-- In order to do this, we make a couple assumptions:
+-- 1. We don't call the server with resolve. Why? Because metals already sends the tooltip with the inlay hint.
+--    Therefore we just skip that part and work with what we have in the inlay_hint
+-- 2. We assume that the worksheet evaluation is the last inlay_hint on the line. I don't really know why
+--    it wouldn't be, so we just say screw it and grab the last one.
 M.hover_worksheet = function(opts)
-  return decoration.hover_worksheet(opts)
+  local buf = api.nvim_get_current_buf()
+  local current_line = vim.api.nvim_win_get_cursor(0)[1] - 1
+  local line_content = vim.api.nvim_buf_get_lines(0, current_line, current_line + 1, false)[1]
+
+  -- Range for the entire line
+  local range = {
+    start = { line = current_line, character = 0 },
+    ["end"] = { line = current_line, character = #line_content },
+  }
+
+  local line_hints = vim.lsp.inlay_hint.get({ bufnr = buf, range = range })
+
+  -- we assume the last one is the evaluation result
+  local evaluation_result = line_hints[#line_hints]
+
+  if evaluation_result then
+    local tooltip = evaluation_result.inlay_hint.tooltip
+
+    if tooltip then
+      local floating_preview_opts = util.check_exists_and_merge({ pad_left = 1, pad_right = 1 }, opts)
+      lsp.util.open_floating_preview({ "```scala", tooltip, "```" }, "markdown", floating_preview_opts)
+    end
+  end
 end
 
 M.setup_dap = function()

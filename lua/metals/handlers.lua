@@ -2,7 +2,6 @@ local api = vim.api
 local fn = vim.fn
 local lsp = vim.lsp
 
-local decoration = require("metals.decoration")
 local doctor = require("metals.doctor")
 local log = require("metals.log")
 local status = require("metals.status")
@@ -49,7 +48,7 @@ end
 -- - https://scalameta.org/metals/docs/integrations/new-editor#metalsexecuteclientcommand
 M["metals/executeClientCommand"] = function(_, result)
   if result.command == "metals-goto-location" then
-    lsp.util.jump_to_location(result.arguments[1], "utf-16")
+    lsp.util.show_document(result.arguments[1], "utf-16", { focus = true })
   elseif result.command == "metals-doctor-run" then
     local args = fn.json_decode(result.arguments[1])
     doctor.create(args)
@@ -60,7 +59,7 @@ M["metals/executeClientCommand"] = function(_, result)
       doctor.create(args)
     end
   elseif result.command == "metals-diagnostics-focus" then
-    vim.diagnostic.setqflist({ severity = "E" })
+    vim.diagnostic.setqflist({ severity = vim.diagnostic.severity.ERROR })
   elseif result.command == "metals-model-refresh" then
     lsp.codelens.refresh()
   elseif result.command == "metals-update-test-explorer" then
@@ -80,38 +79,6 @@ M["metals/status"] = function(_, _status, ctx)
   _status.bufnr = ctx.bufnr
   _status.client_id = ctx.client_id
   status.handle_status(_status)
-end
-
--- Function needed to implement the Decoration Protocol from Metals.
--- - https://scalameta.org/metals/docs/integrations/decoration-protocol
-M["metals/publishDecorations"] = function(err, result)
-  if err then
-    log.error_and_show("Server error while publishing decorations. Please see logs for details.")
-    log.error(err.message)
-  end
-  if not result then
-    return
-  end
-
-  local uri = result.uri
-  local bufnr = vim.uri_to_bufnr(uri)
-
-  if not bufnr then
-    log.warn_and_show(string.format("Couldn't find buffer for %s while publishing decorations.", uri))
-    return
-  end
-
-  -- Unloaded buffers should not handle diagnostics.
-  -- When the buffer is loaded, we'll call on_attach, which sends textDocument/didOpen.
-  if not api.nvim_buf_is_loaded(bufnr) then
-    return
-  end
-
-  decoration.clear(bufnr)
-
-  for _, deco in ipairs(result.options) do
-    decoration.set_decoration(bufnr, deco)
-  end
 end
 
 -- https://scalameta.org/metals/docs/integrations/new-editor/#metalsfindtextindependencyjars

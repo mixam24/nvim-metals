@@ -69,11 +69,11 @@ local handle_decoder_response = function(result, decoder, format)
       -- TODO we should probably do something better for this case, but java is
       -- a bit nicer syntax for these than scala
       if decoder == types.javap then
-        api.nvim_buf_set_option(new_buffer, "syntax", "java")
+        api.nvim_set_option_value("syntax", "java", { buf = new_buffer })
       elseif decoder == types.build_target then
-        api.nvim_buf_set_option(new_buffer, "syntax", "txt")
+        api.nvim_set_option_value("syntax", "txt", { buf = new_buffer })
       else
-        api.nvim_buf_set_option(new_buffer, "syntax", "scala")
+        api.nvim_set_option_value("syntax", "scala", { buf = new_buffer })
       end
       api.nvim_win_set_buf(0, new_buffer)
     end
@@ -88,7 +88,7 @@ local make_handler = function(decoder, format)
       log.error_and_show(string.format("Something went wrong trying to get %s. Please check the logs.", decoder))
       log.error(err)
     else
-      handle_decoder_response(result, decoder, format)
+      handle_decoder_response(result.result, decoder, format)
     end
   end
 end

@@ -26,13 +26,12 @@ jobs:
         echo "$HOME/.local/bin" >> $GITHUB_PATH
 
       env:
-        VERSION: "0.27.1"
+        VERSION: "0.28.0"
         # shashum -a 256 selene-<version>-linux.zip
-        SHA256_CHECKSUM: "22dabfe070c6d10cbb0b8ae56a82abfa131fbb902bff03d9924f0f73fd3d3318"
+        SHA256_CHECKSUM: "5d8706751968486d46d120316b108154693052f75af60efb3dbf4d4cf9e4d902"
 
     - name: Run selene
       run: make lint
-
 
   format-check:
     runs-on: ubuntu-latest
@@ -41,10 +40,10 @@ jobs:
       uses: actions/checkout@v4
 
     - name: Run StyLua
-      uses: JohnnyMorganz/stylua-action@v4.0.0
+      uses: JohnnyMorganz/stylua-action@v4.1.0
       with:
         token: ${{ secrets.GITHUB_TOKEN }}
-        version: 2.0.1
+        version: 2.1.0
         args: --check lua/
 
   test:
@@ -53,7 +52,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        neovim_version: ['v0.10.2', 'nightly']
+        neovim_version: ['v0.11.2', 'nightly']
 
     steps:
       - uses: actions/checkout@v4
@@ -75,7 +74,7 @@ jobs:
 
       - uses: coursier/setup-action@v1
         with:
-          jvm: adoptium:17
+          jvm: adoptium:21
           apps: ""
 
       - name: Setup neovim
@@ -84,13 +83,15 @@ jobs:
           neovim: true
           version: ${{ matrix.neovim_version }}
 
-      - name: Prepare plenary
-        run: |
-          git clone --depth 1 https://github.com/nvim-lua/plenary.nvim ~/.local/share/nvim/site/pack/vendor/start/plenary.nvim
-          ln -s $(pwd) ~/.local/share/nvim/site/pack/vendor/start
+      - name: Install Lua
+        uses: leso-kn/gh-actions-lua@master
+        with:
+          luaVersion: "5.1"
 
-      - name: Run setup tests
-        run: make test-setup
+      - name: Install Luarocks
+        uses: hishamhm/gh-actions-luarocks@master
+        with:
+          luarocksVersion: "3.11.0"
 
       - name: Run tests
         run: make test
