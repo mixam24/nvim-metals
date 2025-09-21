@@ -30,7 +30,7 @@ Doctor.close = function()
 end
 
 --- Create the Doctor.
--- @param args table of the args give by `metals/executeClientCommand`
+-- @param args table of the args given by `metals/executeClientCommand`
 Doctor.create = function(args)
   local output = {}
 
@@ -44,10 +44,16 @@ Doctor.create = function(args)
     "jdkInfo",
   }
 
-  if doctor_version == 3 then
+  table.insert(output, "  - Metals Doctor Version: " .. tostring(doctor_version))
+
+  if doctor_version >= 3 then
     table.insert(fields, "buildTool")
     table.insert(fields, "buildServer")
     table.insert(fields, "importBuildStatus")
+  end
+
+  if doctor_version >= 6 then
+    table.insert(fields, "projectsJavaInfo")
   end
 
   if doctor_version >= 3 then
